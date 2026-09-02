@@ -1,0 +1,23 @@
+# Vivado & Vitis build and temp files
+.Xil/
+*.jou
+*.log
+*.str
+*.dir/
+vivado_project/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.vitis/
+*.gen/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+
+# OS specific
+.DS_Store
+Thumbs.db
