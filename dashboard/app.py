@@ -21,6 +21,15 @@ H_MATRIX = np.array([
     [ 1, -2,  2, -1]
 ], dtype=np.int32)
 
+H_FLOAT = np.array([
+    [ 1,  1,  1,  1],
+    [ 2,  1, -1, -2],
+    [ 1, -1, -1,  1],
+    [ 1, -2,  2, -1]
+], dtype=np.float32)
+
+H_INV = np.linalg.inv(H_FLOAT).astype(np.float32)
+
 def rgb2gray_hw(frame_bgr):
     """
     Fixed-point RGB to Y matching rtl/object_removal/rgb2gray.v
@@ -39,6 +48,36 @@ def dct_4x4_block_hw(block):
     """
     x = block.astype(np.int32)
     return H_MATRIX @ x @ (H_MATRIX.T)
+
+def apply_h264_dct_quant(img_bgr, qp=28):
+    """
+    Simulates hardware 2D 4x4 H.264 Integer DCT + Quantization + Dequantization
+    matching rtl/compression/dct_4x4.v and rtl/compression/quant.v
+    Outputs the compressed reconstructed video stream (Video 2).
+    """
+    ycrcb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2YCrCb)
+    y = ycrcb[:, :, 0].astype(np.float32)
+    h, w = y.shape
+    h_pad = (h // 4) * 4
+    w_pad = (w // 4) * 4
+
+    # Vectorized 4x4 block extraction: shape (H/4, W/4, 4, 4)
+    blocks = y[:h_pad, :w_pad].reshape(h_pad // 4, 4, w_pad // 4, 4).transpose(0, 2, 1, 3)
+
+    # Forward 4x4 Integer DCT: H @ blocks @ H.T
+    coeff = np.matmul(H_FLOAT, np.matmul(blocks, H_FLOAT.T))
+
+    # Quantization step (Qstep increases with QP)
+    q_step = max(1.0, 2.0 ** ((qp - 12) / 6.0))
+    quant = np.round(coeff / q_step) * q_step
+
+    # Inverse 4x4 DCT
+    rec_blocks = np.matmul(H_INV, np.matmul(quant, H_INV.T))
+    rec_y = rec_blocks.transpose(0, 2, 1, 3).reshape(h_pad, w_pad)
+
+    y[:h_pad, :w_pad] = rec_y
+    ycrcb[:, :, 0] = np.clip(y, 0, 255).astype(np.uint8)
+    return cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2BGR)
 
 def compute_psnr(img1, img2):
     mse = np.mean((img1.astype(np.float64) - img2.astype(np.float64)) ** 2)
@@ -234,15 +273,19 @@ def api_process_roi():
     total_removed_px = 0
     psnr_accum = 0.0
 
-    # Output video writers
-    out_clean_name = f'roi_cleaned_{filename}'
-    out_comp_name = f'roi_comparison_{filename}'
-    out_clean_path = os.path.join(app.config['UPLOAD_FOLDER'], out_clean_name)
-    out_comp_path = os.path.join(app.config['UPLOAD_FOLDER'], out_comp_name)
+    # =========================================================================
+    # TWO OUTPUT VIDEOS (Strictly as requested: Removed Part & Compressed Video)
+    # Video 1: out_removed_name -> Object completely removed and inpainted
+    # Video 2: out_compressed_name -> Hardware 4x4 DCT & Quantized compressed stream
+    # =========================================================================
+    out_removed_name = f'removed_{filename}'
+    out_compressed_name = f'compressed_{filename}'
+    out_removed_path = os.path.join(app.config['UPLOAD_FOLDER'], out_removed_name)
+    out_compressed_path = os.path.join(app.config['UPLOAD_FOLDER'], out_compressed_name)
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    writer_clean = cv2.VideoWriter(out_clean_path, fourcc, 20.0, (W, H))
-    writer_comp = cv2.VideoWriter(out_comp_path, fourcc, 20.0, (W * 2, H * 2))
+    writer_removed = cv2.VideoWriter(out_removed_path, fourcc, 20.0, (W, H))
+    writer_compressed = cv2.VideoWriter(out_compressed_path, fourcc, 20.0, (W, H))
 
     for idx, curr_bgr in enumerate(frames_bgr):
         # =====================================================================
@@ -251,18 +294,14 @@ def api_process_roi():
         curr_gray = rgb2gray_hw(curr_bgr)
 
         # =====================================================================
-        # Stage 2: ROI Mask Generation
-        # On FPGA: AXI-Lite registers hold {roi_x, roi_y, roi_w, roi_h}
-        #          Comparator checks: (px_x >= roi_x) && (px_x < roi_x+roi_w) &&
-        #                             (px_y >= roi_y) && (px_y < roi_y+roi_h)
+        # Stage 2: ROI Mask Generation (AXI-Lite Template: px in [roi_x..roi_x+w])
         # =====================================================================
         mask = np.zeros((H, W), dtype=np.uint8)
         mask[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w] = 1
 
         # =====================================================================
-        # Stage 3: Inpainting / Object Removal (Spatial-Temporal Hybrid)
-        # Matches rtl/object_removal/inpainting_8x8_linebuffer.v
-        # Extracts surrounding boundary pixels and infills the interior seamlessly!
+        # Stage 3: Inpainting / Object Removal (Spatial Boundary Diffusion)
+        # Matches inpainting_8x8_linebuffer.v: Samples surrounding boundary and infills
         # =====================================================================
         margin = 24
         y1 = max(0, roi_y - margin)
@@ -274,74 +313,63 @@ def api_process_roi():
         crop_mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
         crop_mask[roi_y - y1 : roi_y + roi_h - y1, roi_x - x1 : roi_x + roi_w - x1] = 255
 
-        # Edge-directed spatial neighborhood diffusion (Fast Marching / Line Buffer Model)
         inpainted_crop = cv2.inpaint(crop_frame, crop_mask, 5, cv2.INPAINT_TELEA)
         cleaned_bgr = curr_bgr.copy()
         cleaned_bgr[y1:y2, x1:x2] = inpainted_crop
         cleaned_gray = rgb2gray_hw(cleaned_bgr)
 
-        # =====================================================================
-        # Stage 4: 2D 4x4 H.264 Integer Transform (HW Exact: dct_4x4.v)
-        # =====================================================================
-        dct_energy_map = np.zeros((H, W), dtype=np.uint8)
-        for r in range(0, min(H, 120), 4):
-            for c in range(0, min(W, 160), 4):
-                blk = cleaned_gray[r:r+4, c:c+4]
-                if blk.shape == (4, 4):
-                    w_blk = dct_4x4_block_hw(blk)
-                    hf_energy = int(np.sum(np.abs(w_blk[1:, 1:])) / 16)
-                    dct_energy_map[r:r+4, c:c+4] = min(255, hf_energy * 4)
-
-        writer_clean.write(cleaned_bgr)
+        # Write Video 1: Object Removed
+        writer_removed.write(cleaned_bgr)
 
         # =====================================================================
-        # Build 4-Quadrant Comparison Frame
-        # [Top-Left: Raw + ROI Box]     [Top-Right: ROI Mask (White)]
-        # [Bot-Left: Cleaned Video]     [Bot-Right: DCT Heatmap]
+        # Stage 4 & 5: H.264 4x4 DCT & Quantization Compression
         # =====================================================================
-        raw_display = curr_bgr.copy()
-        # Draw ROI rectangle on raw input (cyan dashed effect)
-        cv2.rectangle(raw_display, (roi_x, roi_y), (roi_x+roi_w, roi_y+roi_h), (0, 255, 255), 2)
-        cv2.putText(raw_display, "ROI TARGET", (roi_x, roi_y - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+        compressed_bgr = apply_h264_dct_quant(cleaned_bgr, qp)
 
-        mask_viz = cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2BGR)
-        dct_viz = cv2.applyColorMap(dct_energy_map, cv2.COLORMAP_JET)
-
-        # HUD labels
-        cv2.putText(raw_display, "1. RAW INPUT + ROI", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-        cv2.putText(mask_viz, "2. ROI MASK (AXI-Lite Template)", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.putText(cleaned_bgr, "3. INPAINTED (OBJECT REMOVED)", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.putText(dct_viz, "4. 4x4 H.264 DCT ENERGY", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
-        top_row = np.hstack([raw_display, mask_viz])
-        bot_row = np.hstack([cleaned_bgr, dct_viz])
-        comp_frame = np.vstack([top_row, bot_row])
-        writer_comp.write(comp_frame)
+        # Write Video 2: Compressed Video
+        writer_compressed.write(compressed_bgr)
 
         removed_px = int(np.sum(mask))
         total_removed_px += removed_px
         psnr_val = compute_psnr(bg_gray, cleaned_gray.astype(np.uint8))
         psnr_accum += psnr_val
 
-        # Sample snapshots for UI streaming (every 3 frames)
+        # Sample snapshots for UI streaming (clean, no extra mosaics)
         if idx % 3 == 0 or idx == len(frames_bgr) - 1:
-            snap_small = cv2.resize(comp_frame, (720, 480))
-            _, buf = cv2.imencode('.jpg', snap_small, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            b64_str = base64.b64encode(buf).decode('utf-8')
+            # 1. Clean Removed Snapshot
+            snap_w = min(640, W)
+            snap_h = int(snap_w * H / W)
+            snap_rem = cv2.resize(cleaned_bgr, (snap_w, snap_h))
+            _, buf_rem = cv2.imencode('.jpg', snap_rem, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            b64_rem = base64.b64encode(buf_rem).decode('utf-8')
+
+            # 2. Compressed Snapshot
+            snap_comp = cv2.resize(compressed_bgr, (snap_w, snap_h))
+            _, buf_comp = cv2.imencode('.jpg', snap_comp, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            b64_comp = base64.b64encode(buf_comp).decode('utf-8')
+
+            # 3. Clean Side-by-Side (Removed vs Compressed)
+            side_w = min(480, W)
+            side_h = int(side_w * H / W)
+            side_rem = cv2.resize(cleaned_bgr, (side_w, side_h))
+            side_comp = cv2.resize(compressed_bgr, (side_w, side_h))
+            cv2.putText(side_rem, "1. OBJECT REMOVED", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(side_comp, f"2. H.264 COMPRESSED (QP={qp})", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (56, 189, 248), 2)
+            snap_split = np.hstack([side_rem, side_comp])
+            _, buf_split = cv2.imencode('.jpg', snap_split, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            b64_split = base64.b64encode(buf_split).decode('utf-8')
+
             processed_frames_data.append({
                 'frame_idx': idx + 1,
-                'obj_px': removed_px,
                 'psnr': round(psnr_val, 1),
-                'img_b64': b64_str
+                'removed_b64': b64_rem,
+                'compressed_b64': b64_comp,
+                'split_b64': b64_split,
+                'img_b64': b64_rem
             })
 
-    writer_clean.release()
-    writer_comp.release()
+    writer_removed.release()
+    writer_compressed.release()
 
     t_total = max(0.001, time.time() - t_start)
     fps_sim = len(frames_bgr) / t_total
@@ -372,8 +400,9 @@ def api_process_roi():
             'fpga_throughput': "100 MPixels/sec (1 pixel/clk @ 100 MHz)"
         },
         'snapshots': processed_frames_data,
-        'clean_video_url': f"/media/{out_clean_name}",
-        'comparison_video_url': f"/media/{out_comp_name}"
+        'clean_video_url': f"/media/{out_removed_name}",
+        'removed_video_url': f"/media/{out_removed_name}",
+        'compressed_video_url': f"/media/{out_compressed_name}"
     })
 
 # -----------------------------------------------------------------------------
@@ -418,14 +447,19 @@ def api_process():
     total_objects_px = 0
     psnr_accum = 0.0
 
-    out_clean_name = f'cleaned_{filename}'
-    out_comp_name = f'comparison_{filename}'
-    out_clean_path = os.path.join(app.config['UPLOAD_FOLDER'], out_clean_name)
-    out_comp_path = os.path.join(app.config['UPLOAD_FOLDER'], out_comp_name)
+    # =========================================================================
+    # TWO OUTPUT VIDEOS (Strictly as requested: Removed Part & Compressed Video)
+    # Video 1: out_removed_name -> Object completely removed and inpainted
+    # Video 2: out_compressed_name -> Hardware 4x4 DCT & Quantized compressed stream
+    # =========================================================================
+    out_removed_name = f'removed_{filename}'
+    out_compressed_name = f'compressed_{filename}'
+    out_removed_path = os.path.join(app.config['UPLOAD_FOLDER'], out_removed_name)
+    out_compressed_path = os.path.join(app.config['UPLOAD_FOLDER'], out_compressed_name)
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    writer_clean = cv2.VideoWriter(out_clean_path, fourcc, 20.0, (W, H))
-    writer_comp = cv2.VideoWriter(out_comp_path, fourcc, 20.0, (W * 2, H * 2))
+    writer_removed = cv2.VideoWriter(out_removed_path, fourcc, 20.0, (W, H))
+    writer_compressed = cv2.VideoWriter(out_compressed_path, fourcc, 20.0, (W, H))
 
     for idx, curr_bgr in enumerate(frames_bgr):
         curr_gray = rgb2gray_hw(curr_bgr)
@@ -441,48 +475,56 @@ def api_process():
             cleaned_bgr = curr_bgr.copy()
             cleaned_gray = curr_gray.copy()
 
-        dct_energy_map = np.zeros((H, W), dtype=np.uint8)
-        for r in range(0, min(H, 120), 4):
-            for c in range(0, min(W, 160), 4):
-                blk = cleaned_gray[r:r+4, c:c+4]
-                if blk.shape == (4, 4):
-                    w_blk = dct_4x4_block_hw(blk)
-                    hf_energy = int(np.sum(np.abs(w_blk[1:, 1:])) / 16)
-                    dct_energy_map[r:r+4, c:c+4] = min(255, hf_energy * 4)
+        # Write Video 1: Object Removed
+        writer_removed.write(cleaned_bgr)
 
-        writer_clean.write(cleaned_bgr)
+        # =====================================================================
+        # Stage 4 & 5: H.264 4x4 DCT & Quantization Compression
+        # =====================================================================
+        compressed_bgr = apply_h264_dct_quant(cleaned_bgr, qp)
 
-        mask_viz = cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2BGR)
-        dct_viz = cv2.applyColorMap(dct_energy_map, cv2.COLORMAP_JET)
-
-        cv2.putText(curr_bgr, "1. RAW INPUT (WITH INTRUDER)", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-        cv2.putText(mask_viz, "2. HARDWARE DIFF MASK (|Y-Ybg|>Th)", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.putText(cleaned_bgr, "3. HARDWARE INPAINTED (REMOVED)", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.putText(dct_viz, "4. 2D 4x4 H.264 DCT HEATMAP", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
-        top_row = np.hstack([curr_bgr, mask_viz])
-        bot_row = np.hstack([cleaned_bgr, dct_viz])
-        comp_frame = np.vstack([top_row, bot_row])
-        writer_comp.write(comp_frame)
+        # Write Video 2: Compressed Video
+        writer_compressed.write(compressed_bgr)
 
         obj_px = int(np.sum(mask))
         total_objects_px += obj_px
         psnr_val = compute_psnr(bg_gray, cleaned_gray)
         psnr_accum += psnr_val
 
+        # Sample snapshots for UI streaming (clean, no extra mosaics)
         if idx % 3 == 0 or idx == len(frames_bgr) - 1:
-            snap_small = cv2.resize(comp_frame, (720, 480))
-            _, buf = cv2.imencode('.jpg', snap_small, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            b64_str = base64.b64encode(buf).decode('utf-8')
+            snap_w = min(640, W)
+            snap_h = int(snap_w * H / W)
+            snap_rem = cv2.resize(cleaned_bgr, (snap_w, snap_h))
+            _, buf_rem = cv2.imencode('.jpg', snap_rem, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            b64_rem = base64.b64encode(buf_rem).decode('utf-8')
+
+            snap_comp = cv2.resize(compressed_bgr, (snap_w, snap_h))
+            _, buf_comp = cv2.imencode('.jpg', snap_comp, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            b64_comp = base64.b64encode(buf_comp).decode('utf-8')
+
+            side_w = min(480, W)
+            side_h = int(side_w * H / W)
+            side_rem = cv2.resize(cleaned_bgr, (side_w, side_h))
+            side_comp = cv2.resize(compressed_bgr, (side_w, side_h))
+            cv2.putText(side_rem, "1. OBJECT REMOVED", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(side_comp, f"2. H.264 COMPRESSED (QP={qp})", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (56, 189, 248), 2)
+            snap_split = np.hstack([side_rem, side_comp])
+            _, buf_split = cv2.imencode('.jpg', snap_split, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            b64_split = base64.b64encode(buf_split).decode('utf-8')
+
             processed_frames_data.append({
                 'frame_idx': idx + 1,
                 'obj_px': obj_px,
                 'psnr': round(psnr_val, 1),
-                'img_b64': b64_str
+                'removed_b64': b64_rem,
+                'compressed_b64': b64_comp,
+                'split_b64': b64_split,
+                'img_b64': b64_rem
             })
 
-    writer_clean.release()
-    writer_comp.release()
+    writer_removed.release()
+    writer_compressed.release()
 
     t_total = max(0.001, time.time() - t_start)
     fps_sim = len(frames_bgr) / t_total
@@ -510,8 +552,9 @@ def api_process():
             'fpga_throughput': "100 MPixels/sec (1 pixel/clk @ 100 MHz)"
         },
         'snapshots': processed_frames_data,
-        'clean_video_url': f"/media/{out_clean_name}",
-        'comparison_video_url': f"/media/{out_comp_name}"
+        'clean_video_url': f"/media/{out_removed_name}",
+        'removed_video_url': f"/media/{out_removed_name}",
+        'compressed_video_url': f"/media/{out_compressed_name}"
     })
 
 if __name__ == '__main__':

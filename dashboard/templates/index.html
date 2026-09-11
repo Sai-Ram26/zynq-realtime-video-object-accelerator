@@ -117,16 +117,35 @@
                 🚀 Run FPGA Hardware Accelerator
             </button>
 
-            <!-- Download Output -->
-            <a class="btn btn-secondary btn-disabled" id="btn-download" href="#" download="cleaned_video.mp4">
-                📥 Download Cleaned Video (.mp4)
-            </a>
+            <!-- Two Output Video Downloads -->
+            <div class="download-group">
+                <a class="btn btn-primary btn-disabled" id="btn-download-removed" href="#" download="object_removed_video.mp4">
+                    🧹 Download Object Removed Video (.mp4)
+                </a>
+                <a class="btn btn-secondary btn-disabled" id="btn-download-compressed" href="#" download="h264_compressed_video.mp4">
+                    📦 Download Compressed Video (.mp4)
+                </a>
+            </div>
         </aside>
 
         <!-- Visualizer Section -->
         <section class="visualizer-card">
-            <div class="section-title">
-                <span>📺 Real-Time 4-Quadrant Pipeline Visualizer</span>
+            <div class="section-title-row">
+                <div class="section-title">
+                    <span>📺 Pure-Hardware Video Output</span>
+                </div>
+                <!-- Video View Switcher (Strictly the 2 requested videos!) -->
+                <div class="video-view-switcher" id="view-switcher" style="display: none;">
+                    <button type="button" class="view-tab active" id="btn-view-removed">
+                        🧹 1. Object Removed
+                    </button>
+                    <button type="button" class="view-tab" id="btn-view-compressed">
+                        📦 2. H.264 Compressed
+                    </button>
+                    <button type="button" class="view-tab" id="btn-view-split">
+                        ⚡ Side-by-Side
+                    </button>
+                </div>
             </div>
 
             <!-- Screen Viewport -->
