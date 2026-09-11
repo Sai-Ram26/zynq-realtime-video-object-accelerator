@@ -181,6 +181,7 @@ if __name__ == "__main__":
     print(f"[*] Object Removal Metrics:")
     print(f"    - PSNR before inpainting: {psnr_before:.2f} dB")
     print(f"    - PSNR after inpainting:  {psnr_after:.2f} dB (Perfect Ground Truth Match)")
-    
-    golden.export_test_vectors(curr_frame, bg_frame, out_dir="d:/mini_project2/tb/test_vectors")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    test_vec_dir = os.path.join(base_dir, "tb", "test_vectors")
+    golden.export_test_vectors(curr_frame, bg_frame, out_dir=test_vec_dir)
 

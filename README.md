@@ -55,7 +55,7 @@
 ## 2. Complete Directory Structure
 
 ```text
-d:\mini_project2\
+mini_project/
 ├── python/
 │   ├── object_removal_golden.py    # Bit-accurate reference model & testbench vector generator
 │   ├── process_random_video.py     # Multi-frame video simulator with moving intruder removal
@@ -72,7 +72,7 @@ d:\mini_project2\
 │   ├── tb_video_accelerator.v      # Self-checking automated testbench (100% bit-exact match)
 │   ├── tb_dct_4x4.v                # Unit testbench for 2D 4x4 H.264 DCT
 │   ├── test_vectors/               # Generated hex stimuli (.hex)
-│   └── run_sim.bat                 # 1-Click Windows batch test runner
+│   └── run_sim.bat                 # 1-Click Windows batch test runner (Python + Icarus Verilog)
 ├── vitis/
 │   └── src/
 │       ├── main.c                  # ARM Cortex-A9 firmware application & benchmarking
@@ -93,21 +93,29 @@ d:\mini_project2\
 
 ## 3. How to Run & Verify
 
-### Step 1: Run Verification & Test Vectors
-```powershell
-python d:\mini_project2\python\object_removal_golden.py
-python d:\mini_project2\python\live_stream_zedboard.py
+### Step 1: 1-Click Automated Full Suite Test
+Double click or run from terminal:
+```cmd
+tb\run_sim.bat
 ```
+This automatically runs:
+1. Python Golden Reference & Test Vector Export
+2. Multi-Frame Moving Object Removal Simulator
+3. Live Streaming Accelerator Performance Profiler
+4. Icarus Verilog 2D 4x4 H.264 Integer DCT RTL Simulation
+5. Icarus Verilog Top-Level AXI Video Accelerator (100% Bit-Exact Match)
 
-### Step 2: Simulate Verilog RTL
-Run [`tb/run_sim.bat`](file:///d:/mini_project2/tb/run_sim.bat) or compile in Vivado Simulator:
-- Load [`tb/tb_video_accelerator.v`](file:///d:/mini_project2/tb/tb_video_accelerator.v) & [`tb/tb_dct_4x4.v`](file:///d:/mini_project2/tb/tb_dct_4x4.v).
-- Self-checking monitor verifies output against `test_vectors/` and outputs `100% BIT-EXACT MATCH`.
+### Step 2: Individual Python Runs
+```powershell
+python python/object_removal_golden.py
+python python/process_random_video.py
+python python/live_stream_zedboard.py
+```
 
 ### Step 3: 1-Click Vivado Block Design Generation
 In Vivado Tcl Console:
 ```tcl
-cd d:/mini_project2/vivado
+cd <project_path>/vivado
 source bd_zedboard_setup.tcl
 ```
 This automatically configures the Zynq Processing System, AXI DMA, interconnects, and connects the Video Accelerator IP.
@@ -115,5 +123,5 @@ This automatically configures the Zynq Processing System, AXI DMA, interconnects
 ### Step 4: Run Vitis ARM Firmware on ZedBoard
 1. Export Hardware from Vivado (`.xsa`).
 2. Open Vitis, create a new Application Project targeting `xc7z020clg484-1`.
-3. Add the files from [`vitis/src/`](file:///d:/mini_project2/vitis/src/) (`main.c`, `xvideo_accel.c`, `dma_driver.c`).
+3. Add the files from `vitis/src/` (`main.c`, `xvideo_accel.c`, `dma_driver.c`).
 4. Build and Run on ZedBoard!

@@ -21,3 +21,7 @@ __pycache__/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Video uploads and outputs (temporary media)
+dashboard/uploads/*.mp4
+

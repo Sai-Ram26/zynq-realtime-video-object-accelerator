@@ -115,10 +115,10 @@ module tb_video_accelerator;
         $display("===============================================================");
 
         // Load test vectors
-        $readmemh("d:/mini_project2/tb/test_vectors/curr_gray_in.hex", mem_curr_gray);
-        $readmemh("d:/mini_project2/tb/test_vectors/bg_gray_in.hex", mem_bg_gray);
-        $readmemh("d:/mini_project2/tb/test_vectors/expected_mask.hex", mem_exp_mask);
-        $readmemh("d:/mini_project2/tb/test_vectors/expected_cleaned.hex", mem_exp_clean);
+        $readmemh("tb/test_vectors/curr_gray_in.hex", mem_curr_gray);
+        $readmemh("tb/test_vectors/bg_gray_in.hex", mem_bg_gray);
+        $readmemh("tb/test_vectors/expected_mask.hex", mem_exp_mask);
+        $readmemh("tb/test_vectors/expected_cleaned.hex", mem_exp_clean);
 
         // Reset Sequence
         #(CLK_PERIOD * 5);
