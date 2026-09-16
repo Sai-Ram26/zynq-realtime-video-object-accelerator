@@ -18,9 +18,11 @@ module cabac (
     output reg [4:0]            bit_count
 );
 
-    // Simplified Hardware State-Machine for Entropy Bitstream Packing
     reg [63:0] bit_buffer;
     reg [5:0]  buf_len;
+
+    wire sign = (coeff_in < 0);
+    wire [3:0] mag = (coeff_in < 0) ? (-coeff_in[3:0]) : coeff_in[3:0];
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -32,21 +34,15 @@ module cabac (
         end else begin
             valid_out <= 1'b0;
             if (valid_in) begin
-                // Binarization: Non-zero flags + sign + magnitude
                 if (coeff_in == 0) begin
-                    // Zero run: 1 bit '0'
                     bit_buffer <= (bit_buffer << 1) | 64'd0;
                     buf_len    <= buf_len + 1'b1;
                 end else begin
-                    // Significant coeff: 1 bit '1' + sign bit + 4-bit mag
-                    wire sign = (coeff_in < 0);
-                    wire [3:0] mag = (coeff_in < 0) ? (-coeff_in[3:0]) : coeff_in[3:0];
                     bit_buffer <= (bit_buffer << 6) | {1'b1, sign, mag};
                     buf_len    <= buf_len + 6'd6;
                 end
             end
 
-            // Emit 32-bit compressed word once buffer fills or on last block coeff
             if (buf_len >= 6'd32 || (is_last_in_block && buf_len > 0)) begin
                 valid_out      <= 1'b1;
                 bitstream_word <= bit_buffer[63:32];
