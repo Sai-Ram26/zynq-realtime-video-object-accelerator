@@ -12,6 +12,8 @@ vivado_project/
 *.sim/
 *.vitis/
 *.gen/
+*.vcd
+*.vvp
 
 # Python caches
 __pycache__/
