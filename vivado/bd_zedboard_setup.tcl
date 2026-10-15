@@ -44,6 +44,7 @@ catch { set_property board_part em.avnet.com:zed:part0:1.4 [current_project] }
 # ---------------------------------------------------------------------------
 add_files -norecurse [glob -nocomplain [file join $repo_root rtl compression *.v]]
 add_files -norecurse [glob -nocomplain [file join $repo_root rtl top *.v]]
+add_files -norecurse [glob -nocomplain [file join $repo_root rtl riscv *.v]]
 update_compile_order -fileset sources_1
 
 # ---------------------------------------------------------------------------
@@ -137,11 +138,14 @@ connect_bd_intf_net \
     [get_bd_intf_pins axi_dma_0/S_AXIS_S2MM]
 
 # ---------------------------------------------------------------------------
-# 10. Connect IRQ from accelerator to PS IRQ[0]
+# 10. Connect Physical Board Pins (LEDs & Switches)
 # ---------------------------------------------------------------------------
-# (Optional: connect if IRQ is used in SW)
-# connect_bd_net [get_bd_pins video_accelerator_0/irq] \
-#               [get_bd_pins processing_system7_0/IRQ_F2P]
+catch {
+    make_bd_pins_external [get_bd_pins video_accelerator_0/led]
+    set_property name led [get_bd_ports led_0]
+    make_bd_pins_external [get_bd_pins video_accelerator_0/sw]
+    set_property name sw [get_bd_ports sw_0]
+}
 
 # ---------------------------------------------------------------------------
 # 11. Validate, Save, and Generate Wrapper

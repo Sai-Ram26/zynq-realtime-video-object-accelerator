@@ -97,7 +97,11 @@ module video_accelerator_top #(
     output wire [(C_AXIS_DATA_WIDTH/8)-1:0]  m_axis_tkeep,
 
     // Frame-complete interrupt to PS
-    output reg                               irq
+    output reg                               irq,
+
+    // ZedBoard Physical I/O (switches and LEDs for hardware testing)
+    input  wire [7:0]                        sw,
+    output wire [7:0]                        led
 );
 
     // =========================================================================
@@ -243,11 +247,14 @@ module video_accelerator_top #(
     wire [4:0]  h264_total_coeff;
     wire [1:0]  h264_trailing_ones;
 
+    // Hardware switch QP override: if SW[5:0] != 0, switches set QP directly!
+    wire [5:0] active_qp = (sw[5:0] != 6'd0) ? sw[5:0] : reg_qp[5:0];
+
     h264_encoder u_h264 (
         .clk            (aclk),
         .rst_n          (internal_rst_n),
         .valid_in       (blk_valid && comp_en),
-        .qp             (reg_qp[5:0]),
+        .qp             (active_qp),
         .pred_mode      (2'b11),    // Bypass intra (DC subtraction only)
         .is_skip_block  (1'b0),     // No explicit skip in this mode
         // 4x4 pixel block
@@ -317,5 +324,24 @@ module video_accelerator_top #(
             end
         end
     end
+
+    // =========================================================================
+    // ZedBoard Physical LED Status Diagnostics
+    // =========================================================================
+    // Heartbeat counter (toggles LED 7 at ~1.5 Hz @ 100MHz clock)
+    reg [25:0] heartbeat_cnt;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn) heartbeat_cnt <= 26'd0;
+        else heartbeat_cnt <= heartbeat_cnt + 1'b1;
+    end
+
+    assign led[0] = reg_status[0];                // LD0: Accelerator busy
+    assign led[1] = h264_valid;                   // LD1: Block encoded
+    assign led[2] = s_axis_tvalid & s_axis_tready;// LD2: Receiving pixel stream
+    assign led[3] = m_axis_tvalid & m_axis_tready;// LD3: Transmitting H.264 stream
+    assign led[4] = accel_en;                     // LD4: Core enabled
+    assign led[5] = comp_en;                      // LD5: Compression enabled
+    assign led[6] = irq;                          // LD6: Frame IRQ pending
+    assign led[7] = heartbeat_cnt[25];            // LD7: Heartbeat (blinks at ~1.5Hz)
 
 endmodule

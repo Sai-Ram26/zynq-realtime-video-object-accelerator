@@ -92,7 +92,9 @@ module tb_video_accelerator;
         .m_axis_tready  (m_axis_tready),
         .m_axis_tlast   (m_axis_tlast),
         .m_axis_tkeep   (m_axis_tkeep),
-        .irq            (irq)
+        .irq            (irq),
+        .sw             (8'd0),
+        .led            ()
     );
 
     // =========================================================================
