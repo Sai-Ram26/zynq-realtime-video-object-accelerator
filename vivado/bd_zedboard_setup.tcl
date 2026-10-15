@@ -83,6 +83,8 @@ set_property -dict [list \
     CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {100} \
     CONFIG.PCW_USE_M_AXI_GP0            {1}   \
     CONFIG.PCW_USE_S_AXI_HP0            {1}   \
+    CONFIG.PCW_USE_FABRIC_INT           {1}   \
+    CONFIG.PCW_IRQ_F2P_INTR             {1}   \
 ] [get_bd_cells processing_system7_0]
 
 # ---------------------------------------------------------------------------
@@ -97,7 +99,6 @@ set_property -dict [list \
     CONFIG.c_m_axis_mm2s_tdata_width   {32} \
     CONFIG.c_mm2s_burst_size           {16} \
     CONFIG.c_m_axi_s2mm_data_width     {32} \
-    CONFIG.c_s_axis_s2mm_tdata_width   {32} \
     CONFIG.c_s2mm_burst_size           {16} \
 ] [get_bd_cells axi_dma_0]
 
