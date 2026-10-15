@@ -28,6 +28,7 @@ set SRCS=^
  %RTL%\cavlc.v^
  %RTL%\cabac.v^
  %RTL%\h264_encoder.v^
+ %RISCV%\riscv_custom_video_decoder.v^
  %TOP%\video_accelerator_top.v
 
 REM --- Check iverilog is installed ---
@@ -41,10 +42,10 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM -----------------------------------------------------------------------
-REM  Test 1: Full system AXI & H.264 pipeline testbench
+REM  Test 1: Full system AXI and H.264 pipeline testbench
 REM -----------------------------------------------------------------------
 echo.
-echo [1/3] Compiling full system AXI & H.264 testbench...
+echo [1/3] Compiling full system AXI and H.264 testbench...
 iverilog -g2012 -Wall -o sim_top.vvp %SRCS% %TB%\tb_video_accelerator.v
 if %ERRORLEVEL% NEQ 0 (
     echo [FAIL] Compile error in full system testbench

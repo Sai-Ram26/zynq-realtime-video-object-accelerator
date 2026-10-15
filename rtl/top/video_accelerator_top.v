@@ -101,20 +101,39 @@ module video_accelerator_top #(
 
     // ZedBoard Physical I/O (switches and LEDs for hardware testing)
     input  wire [7:0]                        sw,
-    output wire [7:0]                        led
+    output wire [7:0]                        led,
+
+    // Direct RISC-V CPU Pipeline Interface (Optional external soft-core connection)
+    input  wire                              ext_riscv_valid,
+    input  wire [31:0]                       ext_riscv_instr,
+    input  wire [31:0]                       ext_riscv_rs1,
+    input  wire [31:0]                       ext_riscv_rs2,
+    input  wire [31:0]                       ext_riscv_rs3,
+    output wire                              ext_riscv_ready,
+    output wire                              ext_riscv_rd_valid,
+    output wire [31:0]                       ext_riscv_rd_data
 );
 
     // =========================================================================
-    // AXI4-Lite Register Bank
+    // AXI4-Lite Register Bank (ARM Cortex-A9 Interface)
     // =========================================================================
     // Internal register storage
-    reg [31:0] reg_ctrl;    // 0x00
-    reg [31:0] reg_width;   // 0x04
-    reg [31:0] reg_height;  // 0x08
-    reg [31:0] reg_qp;      // 0x0C
-    reg [31:0] reg_status;  // 0x10  (read-only)
-    reg [31:0] perf_pixel;  // 0x14  (read-only)
-    reg [31:0] perf_skip;   // 0x18  (read-only)
+    reg [31:0] reg_ctrl;        // 0x00
+    reg [31:0] reg_width;       // 0x04
+    reg [31:0] reg_height;      // 0x08
+    reg [31:0] reg_qp;          // 0x0C
+    reg [31:0] reg_status;      // 0x10  (read-only)
+    reg [31:0] perf_pixel;      // 0x14  (read-only)
+    reg [31:0] perf_skip;       // 0x18  (read-only)
+
+    // RISC-V Custom ISA Co-Processor Registers (Accessible via ARM AXI-Lite)
+    reg [31:0] reg_riscv_ctrl;   // 0x1C  [0]=Trigger Pulse, [1]=Busy, [2]=Done
+    reg [31:0] reg_riscv_instr;  // 0x20  Instruction word (e.g. opcode 0x0B)
+    reg [31:0] reg_riscv_rs1;    // 0x24  Operand 1 (width / parameter)
+    reg [31:0] reg_riscv_rs2;    // 0x28  Operand 2 (height / parameter)
+    reg [31:0] reg_riscv_rs3;    // 0x2C  Operand 3 (QP / mode parameter)
+    reg [31:0] reg_riscv_rd;     // 0x30  Result register read-back
+    reg        riscv_trigger_pulse;
 
     // Convenience signals decoded from CTRL register
     wire accel_en   = reg_ctrl[0];
@@ -138,24 +157,44 @@ module video_accelerator_top #(
     // ---------- Write path ----------
     always @(posedge aclk or negedge aresetn) begin
         if (!aresetn) begin
-            axi_awready_r <= 1'b0;
-            axi_wready_r  <= 1'b0;
-            axi_bvalid_r  <= 1'b0;
-            reg_ctrl      <= 32'h00000001; // accel enabled, compress enabled
-            reg_width     <= 32'd320;
-            reg_height    <= 32'd240;
-            reg_qp        <= 32'd28;
+            axi_awready_r       <= 1'b0;
+            axi_wready_r        <= 1'b0;
+            axi_bvalid_r        <= 1'b0;
+            reg_ctrl            <= 32'h00000001; // accel enabled, compress enabled
+            reg_width           <= 32'd320;
+            reg_height          <= 32'd240;
+            reg_qp              <= 32'd28;
+            reg_riscv_ctrl      <= 32'd0;
+            reg_riscv_instr     <= 32'd0;
+            reg_riscv_rs1       <= 32'd0;
+            reg_riscv_rs2       <= 32'd0;
+            reg_riscv_rs3       <= 32'd0;
+            riscv_trigger_pulse <= 1'b0;
         end else begin
+            // Single-cycle trigger pulse self-clear
+            riscv_trigger_pulse <= 1'b0;
+
             if (~axi_awready_r && s_axi_awvalid && s_axi_wvalid) begin
                 axi_awready_r <= 1'b1;
                 axi_wready_r  <= 1'b1;
                 axi_bvalid_r  <= 1'b1;
                 // Decode write address (word-indexed on bits [5:2])
                 case (s_axi_awaddr[5:2])
-                    4'h0: reg_ctrl   <= s_axi_wdata;
-                    4'h1: reg_width  <= s_axi_wdata;
-                    4'h2: reg_height <= s_axi_wdata;
-                    4'h3: reg_qp     <= s_axi_wdata;
+                    4'h0: reg_ctrl        <= s_axi_wdata;
+                    4'h1: reg_width       <= s_axi_wdata;
+                    4'h2: reg_height      <= s_axi_wdata;
+                    4'h3: reg_qp          <= s_axi_wdata;
+                    4'h7: begin
+                        reg_riscv_ctrl      <= s_axi_wdata;
+                        riscv_trigger_pulse <= s_axi_wdata[0];
+                    end
+                    4'h8: begin
+                        reg_riscv_instr     <= s_axi_wdata;
+                        riscv_trigger_pulse <= 1'b1; // Auto-trigger execution on instruction write
+                    end
+                    4'h9: reg_riscv_rs1   <= s_axi_wdata;
+                    4'hA: reg_riscv_rs2   <= s_axi_wdata;
+                    4'hB: reg_riscv_rs3   <= s_axi_wdata;
                     default: ;
                 endcase
             end else begin
@@ -185,6 +224,12 @@ module video_accelerator_top #(
                     4'h4: axi_rdata_r <= reg_status;
                     4'h5: axi_rdata_r <= perf_pixel;
                     4'h6: axi_rdata_r <= perf_skip;
+                    4'h7: axi_rdata_r <= {29'd0, riscv_dec_rd_valid, !riscv_dec_ready, riscv_trigger_pulse};
+                    4'h8: axi_rdata_r <= reg_riscv_instr;
+                    4'h9: axi_rdata_r <= reg_riscv_rs1;
+                    4'hA: axi_rdata_r <= reg_riscv_rs2;
+                    4'hB: axi_rdata_r <= reg_riscv_rs3;
+                    4'hC: axi_rdata_r <= reg_riscv_rd;
                     default: axi_rdata_r <= 32'hDEAD_BEEF;
                 endcase
             end else begin
@@ -192,6 +237,76 @@ module video_accelerator_top #(
                 if (s_axi_rready && axi_rvalid_r)
                     axi_rvalid_r <= 1'b0;
             end
+        end
+    end
+
+    // =========================================================================
+    // RISC-V Custom ISA Co-Processor Linking & Execution
+    // =========================================================================
+    wire        riscv_inv_valid = ext_riscv_valid | riscv_trigger_pulse;
+    wire [31:0] riscv_inv_instr = ext_riscv_valid ? ext_riscv_instr : reg_riscv_instr;
+    wire [31:0] riscv_inv_rs1   = ext_riscv_valid ? ext_riscv_rs1   : reg_riscv_rs1;
+    wire [31:0] riscv_inv_rs2   = ext_riscv_valid ? ext_riscv_rs2   : reg_riscv_rs2;
+    wire [31:0] riscv_inv_rs3   = ext_riscv_valid ? ext_riscv_rs3   : reg_riscv_rs3;
+
+    wire        riscv_dec_ready;
+    wire        riscv_dec_rd_valid;
+    wire [31:0] riscv_dec_rd_data;
+    wire        riscv_hw_start;
+    wire [15:0] riscv_hw_w;
+    wire [15:0] riscv_hw_h;
+    wire [7:0]  riscv_hw_qp;
+    wire [7:0]  riscv_hw_mode;
+    wire [2:0]  riscv_hw_sub_op;
+
+    riscv_custom_video_decoder u_riscv_decoder (
+        .clk            (aclk),
+        .rst_n          (aresetn && ~soft_rst),
+        .instr_valid    (riscv_inv_valid),
+        .instr_word     (riscv_inv_instr),
+        .instr_ready    (riscv_dec_ready),
+        .rs1_data       (riscv_inv_rs1),
+        .rs2_data       (riscv_inv_rs2),
+        .rs3_data       (riscv_inv_rs3),
+        .rd_valid       (riscv_dec_rd_valid),
+        .rd_data        (riscv_dec_rd_data),
+        .hw_start_block (riscv_hw_start),
+        .hw_block_w     (riscv_hw_w),
+        .hw_block_h     (riscv_hw_h),
+        .hw_qp          (riscv_hw_qp),
+        .hw_mode        (riscv_hw_mode),
+        .hw_sub_op      (riscv_hw_sub_op),
+        .hw_busy        (reg_status[0]),
+        .hw_done        (reg_status[1]),
+        .hw_cycles      (perf_pixel)
+    );
+
+    assign ext_riscv_ready    = riscv_dec_ready;
+    assign ext_riscv_rd_valid = riscv_dec_rd_valid;
+    assign ext_riscv_rd_data  = riscv_dec_rd_data;
+
+    // Capture RISC-V destination register result into AXI-Lite readback
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn) begin
+            reg_riscv_rd <= 32'd0;
+        end else if (riscv_dec_rd_valid) begin
+            reg_riscv_rd <= riscv_dec_rd_data;
+        end
+    end
+
+    // Dynamic QP resolution:
+    // 1. ZedBoard physical switches SW[5:0] override QP if non-zero.
+    // 2. RISC-V custom instruction (VBLK or VQNT) updates QP dynamically if executed.
+    // 3. ARM Cortex-A9 AXI-Lite register (reg_qp) sets default QP.
+    reg [5:0] riscv_stored_qp;
+    reg       riscv_qp_set;
+    always @(posedge aclk or negedge aresetn) begin
+        if (!aresetn || soft_rst) begin
+            riscv_stored_qp <= 6'd28;
+            riscv_qp_set    <= 1'b0;
+        end else if (riscv_hw_start || (riscv_hw_sub_op == 3'd3 && riscv_dec_rd_valid)) begin
+            riscv_stored_qp <= riscv_hw_qp[5:0];
+            riscv_qp_set    <= 1'b1;
         end
     end
 
@@ -247,8 +362,13 @@ module video_accelerator_top #(
     wire [4:0]  h264_total_coeff;
     wire [1:0]  h264_trailing_ones;
 
-    // Hardware switch QP override: if SW[5:0] != 0, switches set QP directly!
-    wire [5:0] active_qp = (sw[5:0] != 6'd0) ? sw[5:0] : reg_qp[5:0];
+    // Hardware priority:
+    // 1. ZedBoard switches SW[5:0] (if non-zero) override QP physically.
+    // 2. RISC-V custom instruction (VBLK or VQNT) updates QP dynamically if executed.
+    // 3. ARM Cortex-A9 AXI-Lite register (reg_qp) sets default QP.
+    wire [5:0] active_qp = (sw[5:0] != 6'd0) ? sw[5:0] :
+                           (riscv_qp_set)    ? riscv_stored_qp :
+                                               reg_qp[5:0];
 
     h264_encoder u_h264 (
         .clk            (aclk),

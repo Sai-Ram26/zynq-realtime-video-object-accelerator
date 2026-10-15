@@ -94,7 +94,15 @@ module tb_video_accelerator;
         .m_axis_tkeep   (m_axis_tkeep),
         .irq            (irq),
         .sw             (8'd0),
-        .led            ()
+        .led            (),
+        .ext_riscv_valid    (1'b0),
+        .ext_riscv_instr    (32'd0),
+        .ext_riscv_rs1      (32'd0),
+        .ext_riscv_rs2      (32'd0),
+        .ext_riscv_rs3      (32'd0),
+        .ext_riscv_ready    (),
+        .ext_riscv_rd_valid (),
+        .ext_riscv_rd_data  ()
     );
 
     // =========================================================================
@@ -287,6 +295,25 @@ module tb_video_accelerator;
             $display("[PASS] Pixel counter = %0d", rd_data);
         else begin
             $display("[FAIL] Pixel counter is zero");
+            fail_count = fail_count + 1;
+        end
+
+        // ------ TEST 4: ARM <-> RISC-V Custom ISA Co-processor Link ------
+        $display("=== TEST 4: ARM <-> RISC-V Co-processor Link ===");
+        // ARM writes RISC-V operands via AXI-Lite:
+        // rs1=426 (width), rs2=240 (height), rs3=QP:36
+        axi_write(6'h24, 32'd426);
+        axi_write(6'h28, 32'd240);
+        axi_write(6'h2C, {16'd0, 8'd0, 8'd36});
+        // ARM writes instruction word: VBLK (opcode 0x0B, funct3=000)
+        axi_write(6'h20, 32'h0000000B);
+        repeat(5) @(posedge aclk);
+        // ARM reads back result from RISCV_RD (0x30)
+        axi_read(6'h30, rd_data);
+        if (rd_data == 32'h00000001) begin
+            $display("[PASS] RISC-V VBLK instruction executed successfully via ARM AXI-Lite, rd=0x%08X", rd_data);
+        end else begin
+            $display("[FAIL] RISC-V execution failed: rd=0x%08X", rd_data);
             fail_count = fail_count + 1;
         end
 
