@@ -156,6 +156,61 @@ body {
   border: 1px solid rgba(99, 102, 241, 0.4);
 }
 
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.board-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border-color);
+  padding: 0.4rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-family: var(--font-mono);
+}
+
+.board-alert {
+  display: flex;
+  gap: 0.75rem;
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+}
+
+.board-alert.connected {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.board-alert.simulated {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.alert-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.alert-body strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.alert-body p {
+  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.78rem;
+}
+
 /* Dashboard Layout */
 .dashboard-container {
   display: grid;

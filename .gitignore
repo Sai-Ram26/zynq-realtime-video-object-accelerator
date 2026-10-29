@@ -29,4 +29,7 @@ dashboard/uploads/*.mp4
 results/uploads/*.mp4
 results/outputs/*.mp4
 results/test_vectors/*.mp4
+uploads/
+outputs/
+*.logfile
 
