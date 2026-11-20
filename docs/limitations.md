@@ -31,7 +31,7 @@
 - **CONSEQUENCE**: A web browser cannot communicate directly with the ZedBoard PHY.
 - **SYSTEM RESOLUTION**: A local Python backend daemon runs on `localhost:5000`, mediating between HTTP/WebSocket from the browser and TCP over Ethernet to the ZedBoard.
 
-### 2.2 Host Video Parsing Boundary
+### 2.2 Host Video Container Boundary
 - **FACT**: Video container formats (MP4, MKV) contain intricate metadata, moov atoms, track headers, and variable-length packet descriptors.
-- **LIMITATION**: Implementing a full MP4 demuxer in Verilog RTL would waste thousands of LUTs without adding research value.
-- **SYSTEM RESOLUTION**: The host laptop decodes input MP4 containers into uncompressed planar YUV frames; the FPGA performs the computationally heavy spatial downscaling, 4x4 transform, quantization, and entropy encoding.
+- **LIMITATION**: Implementing a full MP4 container demuxer in Verilog RTL would waste thousands of LUTs without adding codec value.
+- **SYSTEM RESOLUTION**: The host laptop only demuxes the MP4 container and transfers source frames. The FPGA performs spatial downscaling, color/sample formatting, 4x4 transform, quantization, and entropy encoding.

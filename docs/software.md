@@ -41,9 +41,9 @@
 |                                        |                                        |
 |   +------------------------------------v------------------------------------+   |
 |   |  `host/communication/fpga_client.py` (Binary Packet Transport)          |   |
-|   |  - Connects to ZedBoard TCP Socket (Default: `192.168.1.10:5000`)        |   |
+|   |  - Connects to ZedBoard TCP Socket (Default: `192.168.1.50:5001`)        |   |
 |   |  - Formats 32-byte binary protocol headers with CRC32 checksums         |   |
-|   |  - Manages automatic fallback to Mock FPGA Server when hardware offline |   |
+|   |  - Requires the ARM TCP service before starting FPGA compression           |   |
 |   +-------------------------------------------------------------------------+   |
 +---------------------------------------------------------------------------------+
 ```

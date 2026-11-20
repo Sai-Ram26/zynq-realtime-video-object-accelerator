@@ -1,15 +1,15 @@
 @echo off
 echo ======================================================================
-echo   ZYNQ-7000 VIDEO ACCELERATOR - OFFLINE FPGA COMPRESSION DASHBOARD
+echo   ZYNQ-7000 VIDEO ACCELERATOR - FPGA COMPRESSION DASHBOARD
 echo   Target Hardware: Avnet ZedBoard (Zynq-7000 SoC XC7Z020)
-echo   Host: Completely Offline (Zero Cloud / Zero External APIs)
+echo   Host: Local dashboard; compression is performed by the ZedBoard FPGA
 echo ======================================================================
 
 set SCRIPT_DIR=%~dp0
 cd /d "%SCRIPT_DIR%"
 
 rem Ensure Python is in PATH
-set PATH=%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts;%PATH%
+set PATH=C:\Python314;C:\Python314\Scripts;%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts;%PATH%
 
 echo.
 echo [*] Checking Python environment...
@@ -29,8 +29,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo [*] Starting Mock ZedBoard Hardware Server (TCP port 5000)...
+echo [*] No FPGA mock server is started; hardware mode requires the ARM TCP service.
 echo [*] Starting Flask Web Dashboard Server (HTTP port 8080)...
+echo [*] Hardware mode expects ZEDBOARD_IP and ZEDBOARD_PORT (default 192.168.1.50:5001).
 echo.
 echo [*] Dashboard will open at: http://127.0.0.1:8080
 echo [*] Press Ctrl+C in this window to stop the server.
@@ -40,7 +41,7 @@ rem Open browser after a 2-second delay to allow Flask to start
 start "" cmd /c "timeout /t 2 /nobreak >nul && start http://127.0.0.1:8080"
 
 rem Launch the Flask backend (blocks until Ctrl+C)
-python host\server\app.py
+python server.py
 
 echo.
 echo [*] Server stopped.

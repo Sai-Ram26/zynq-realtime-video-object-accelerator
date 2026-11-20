@@ -1,0 +1,8 @@
+[
+{
+  "directory": "D:/mini_project2/vitis/video_accel_app/build",
+  "command": "C:\\AMDDesignTools\\2026.1\\Vitis\\gnu\\aarch32\\nt\\gcc-arm-none-eabi\\bin\\arm-none-eabi-gcc.exe -ID:/mini_project2/vitis/video_accel_app/src -isystem D:/mini_project2/vitis/zedboard_platform/export/zedboard_platform/sw/standalone_ps7_cortexa9_0/include -isystem C:/AMDDesignTools/2026.1/gnu/aarch32/nt/gcc-arm-none-eabi/x86_64-oesdk-mingw32/usr/lib/arm-xilinx-eabi/gcc/arm-xilinx-eabi/13.4.0/include -isystem C:/AMDDesignTools/2026.1/gnu/aarch32/nt/gcc-arm-none-eabi/x86_64-oesdk-mingw32/usr/lib/arm-xilinx-eabi/gcc/arm-xilinx-eabi/13.4.0/include-fixed -isystem C:/AMDDesignTools/2026.1/Vitis/gnu/aarch32/nt/gcc-arm-none-eabi/aarch32-xilinx-eabi/usr/include  -DSDT -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard  -MMD -MP -specs=D:/mini_project2/vitis/zedboard_platform/export/zedboard_platform/sw/standalone_ps7_cortexa9_0/Xilinx.spec -ID:/mini_project2/vitis/zedboard_platform/export/zedboard_platform/sw/standalone_ps7_cortexa9_0/include -Wall -Wextra      -O0  -g3     -U__clang__ -o CMakeFiles\\video_accel_app.elf.dir\\D_\\mini_project2\\vitis\\video_accel_app\\main.c.obj -c D:\\mini_project2\\vitis\\video_accel_app\\main.c",
+  "file": "D:\\mini_project2\\vitis\\video_accel_app\\main.c",
+  "output": "CMakeFiles\\video_accel_app.elf.dir\\D_\\mini_project2\\vitis\\video_accel_app\\main.c.obj"
+}
+]

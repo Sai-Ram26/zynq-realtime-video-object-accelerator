@@ -1,8 +1,8 @@
 # Project Status: Offline FPGA Video Compression Accelerator
 
 **Current Date / Timestamp:** 2026-10-08  
-**Current Phase:** ALL PHASES COMPLETE (100% VERIFIED)  
-**Status Flag:** FULLY VERIFIED & OPERATIONAL (ALL 16 MODULE TESTBENCHES & SUITES PASSED)
+**Current Phase:** RTL AND VIVADO BUILD COMPLETE; BOARD VALIDATION PENDING
+**Status Flag:** SIMULATION-PASSING AND TIMING-CLOSED BUILD; PHYSICAL SERVICE NOT YET VALIDATED
 
 ---
 
@@ -19,8 +19,8 @@
 | **Host Python** | Python 3.11.9 | FACT | Verified: OpenCV 5.0.0, NumPy 2.4.6, Flask 3.1.3, SciPy, Pillow installed |
 | **Simulation Toolchain**| Icarus Verilog (`iverilog.exe` v12.0) & `vvp.exe` | FACT | Found in `C:\Users\...\AppData\Local\Programs\iverilog\app\bin\`. Fully verified. |
 | **Waveform Viewer** | GTKWave (`gtkwave.exe`) | FACT | Installed and on PATH |
-| **Vivado Installation**| NOT INSTALLED on Host Machine | FACT | No `vivado.bat` detected on `C:\`. Offline flow & tcl scripts provided. |
-| **Physical ZedBoard Connection** | NOT DETECTED over USB-UART / Link-Local Ethernet | FACT | Hardware not physically attached to laptop at time of audit. |
+| **Vivado Installation**| AMD Vivado 2026.1 | FACT | Full synthesis, implementation, timing analysis, bitstream, and XSA generation completed. |
+| **Physical ZedBoard Connection** | NOT VALIDATED | FACT | The generated artifacts still require programming and an on-board TCP/DMA/encoder test. |
 
 ---
 
@@ -30,7 +30,7 @@
 - **SOURCE EVIDENCE**: AMD UG585 (Zynq TRM), Digilent ZedBoard Hardware Guide, ITU-T H.264 (06/2026), ScienceDirect H.264 FPGA encoder publications.
 - **ENGINEERING INFERENCE**: 8K uncompressed video (~24.88 GB/s at 60 fps) cannot physically be streamed in real-time over 1 GbE (125 MB/s ceiling). 8K processing must be performed offline in chunks/tiles.
 - **PROPOSED DESIGN**: Two-track architecture:
-  - **Track A (Operational Base)**: Laptop (decoding container to raw YUV) $\to$ TCP Ethernet $\to$ ZedBoard PS (ARM Cortex-A9) $\to$ AXI DMA $\to$ Custom Streaming Scaler $\to$ 4x4 Integer Transform $\to$ Quantizer $\to$ CAVLC Entropy Encoder $\to$ Laptop Website (Side-by-side player).
+  - **Track A (Operational Base)**: Laptop (MP4 container demux only) $\to$ TCP Ethernet $\to$ ZedBoard PS (ARM Cortex-A9) $\to$ FPGA source-frame scaler $\to$ 4x4 Integer Transform $\to$ Quantizer $\to$ CAVLC Entropy Encoder $\to$ Laptop Website (Side-by-side player).
   - **Track B (Research Contribution)**: Optional RISC-V soft CPU (PicoRV32) tightly coupled to accelerator via custom instruction extension (`VBLK` / `VCONFIG`).
 - **SPECULATION / REJECTED CLAIMS**: Claims of "0-DSP H.264 encoder", "1,357 LUT complete encoder", "250 ns end-to-end video latency", or "Real-time uncompressed 8K60 over 1GbE" are mathematically impossible or unverified, and are strictly discarded per specification guidelines.
 
@@ -38,17 +38,17 @@
 
 ## 3. Physical Hardware Boundary (Section 37 Compliance)
 
-Because physical ZedBoard hardware and Vivado are currently unavailable on this workstation:
+Because physical ZedBoard hardware is not connected for this validation run:
 1. **Offline Hardware Simulation**: All RTL modules (RGB2YUV, Scaler, DCT 4x4, Quantizer, CAVLC, NAL Bitstream, AXI-Lite registers) are simulated and verified bit-accurately using Icarus Verilog (`iverilog -g2012`) against Python NumPy/OpenCV golden models.
 2. **Mock Hardware Socket Server**: A complete byte-accurate TCP socket daemon (`host/communication/mock_zedboard_server.py`) is implemented matching the exact packet protocol in `docs/protocol.md`, allowing the web dashboard and laptop daemon to execute identically with or without the physical board.
 3. **Physical Hardware Checklist**: When the user connects the physical ZedBoard:
-   - Configure ZedBoard static IP: `192.168.1.10:5000` (or `192.168.56.2`).
+   - Configure ZedBoard static IP: `192.168.1.50:5001` (or another address supplied through `ZEDBOARD_IP` and `ZEDBOARD_PORT`).
    - Run synthesis with provided `scripts/run_vivado_synth.tcl` on any machine with Vivado installed.
    - Flash bitstream via JTAG/microSD.
 
 ---
 
-## 4. Verification Summary & Test Results (100% Pass)
+## 4. Verification Summary & Test Results
 
 | Component / Test Suite | Test File / Command | Outcome | Key Metrics |
 | :--- | :--- | :--- | :--- |
@@ -69,5 +69,8 @@ Because physical ZedBoard hardware and Vivado are currently unavailable on this 
 | **Host Phase 2: TCP Socket Protocol** | `host/tests/test_phase2_comm.py` | **5/5 PASS** | 100% bit-perfect (0 errors), 152.9 MB/s throughput |
 | **Benchmark Suite: Resolution Matrix** | `host/tests/benchmark_suite.py` | **8/8 PASS** | TM-01 to TM-08 (720p/1080p/4K/8K -> 240p/144p) |
 
-**Total Verification Status:** 100% (All 16 testbenches and test suites passed cleanly with 0 failures).
+**Current verification status:** The active RTL simulation suite passes, and the
+latest Vivado implementation is timing-closed at 50 MHz. Physical ZedBoard
+programming, ARM firmware compilation/deployment, TCP transfer, DMA completion,
+and decoded H.264 playback remain board-validation tasks.
 

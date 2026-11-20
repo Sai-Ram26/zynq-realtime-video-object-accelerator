@@ -4,16 +4,34 @@
 *.log
 *.str
 *.dir/
+xsim.dir/
+*.wdb
+*.pb
 vivado_project/
 *.cache/
 *.hw/
 *.ip_user_files/
 *.runs/
+vivado_build/
 *.sim/
 *.vitis/
 *.gen/
 *.vcd
 *.vvp
+*.dcp
+
+# Vitis Unified IDE temporary and workspace files
+vitis/**/build/
+vitis/**/_ide/
+vitis/**/CMakeFiles/
+vitis/_ide/
+vitis/.rigel_lopper/
+vitis/zedboard_platform/
+vitis/video_accel_app/build/
+vitis/video_accel_app/_ide/
+vitis/video_accel_app/.wsdata/
+vitis_workspace/
+.wsdata/
 
 # Python caches
 __pycache__/
@@ -32,4 +50,5 @@ results/test_vectors/*.mp4
 uploads/
 outputs/
 *.logfile
+
 

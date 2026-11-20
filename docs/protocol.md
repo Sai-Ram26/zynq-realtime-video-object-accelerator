@@ -1,14 +1,26 @@
 # FPGA Binary Communication Protocol Specification
 
 **Document Version:** 1.0.0  
-**Transport:** Gigabit Ethernet (TCP/IP over port 5000)  
+**Transport:** Gigabit Ethernet (TCP/IP over port 5001)
 **Byte Order:** Big-Endian (Network Byte Order)
+
+The deployed ARM service uses the following frame transaction, which is also
+implemented by `movie_host.py`: a 28-byte `H264` header
+(`magic, frame_id:u32, source_width:u16, source_height:u16,
+target_width:u16, target_height:u16, qp:u16, flags:u16, reserved:u32,
+payload_length:u32`), followed by the raw planar I420 source payload.
+The FPGA performs scaling and macroblock packing before the encoder reads the
+target frame.
+The response is an 8-byte `NALU` header (`magic, length:u32`) followed by the
+Annex-B H.264 byte stream. Payloads are limited to 64 MiB by the ARM receiver and output frames to 2 MiB.
 
 ---
 
 ## 1. Packet Framing & Header Format
 
-Every packet transmitted between the Host Laptop and the FPGA (or Mock Hardware Server) starts with a fixed 32-byte header, followed by an optional payload, followed by a 4-byte CRC32 trailer.
+The legacy generic packet format below uses a fixed 32-byte header and CRC32
+trailer. The active `movie_host.py`/ARM service path uses the 28-byte `H264`
+frame header and 8-byte `NALU` response described above.
 
 ```
  0                   1                   2                   3

@@ -194,6 +194,11 @@ body {
   border: 1px solid rgba(245, 158, 11, 0.4);
 }
 
+.board-alert.simulated {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
 .alert-icon {
   font-size: 1.25rem;
   line-height: 1;

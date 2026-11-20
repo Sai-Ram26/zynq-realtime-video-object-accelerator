@@ -39,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const boardAlert = document.getElementById('board-alert');
   const alertTitle = document.getElementById('alert-title');
   const alertDesc = document.getElementById('alert-desc');
-  const checkSimMode = document.getElementById('check-simulation-mode');
 
   let currentSessionId = null;
   let isBoardConnected = false;
@@ -73,49 +72,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateBoardUI(data) {
-    const simAllowed = checkSimMode && checkSimMode.checked;
-
     if (data.physical_detected) {
       boardStatusDot.className = 'status-dot connected';
-      boardStatusText.textContent = 'ZedBoard Connected';
+      boardStatusText.textContent = 'ZedBoard Connected (FPGA Mode)';
       boardAlert.className = 'board-alert connected';
       alertTitle.textContent = 'ZedBoard FPGA Detected';
       alertDesc.textContent = `Hardware online: ${data.details.join(', ') || data.board_model}. Ready for DMA acceleration.`;
-    } else if (simAllowed) {
-      boardStatusDot.className = 'status-dot simulated';
-      boardStatusText.textContent = 'Simulation Mode Active';
-      boardAlert.className = 'board-alert simulated';
-      alertTitle.textContent = 'Host Golden Model Simulation';
-      alertDesc.textContent = 'FPGA hardware is offline. Running software verification model on host CPU.';
     } else {
-      boardStatusDot.className = 'status-dot disconnected';
-      boardStatusText.textContent = 'Board Disconnected';
-      boardAlert.className = 'board-alert';
-      alertTitle.textContent = 'FPGA Board Not Detected';
-      alertDesc.textContent = 'Connect ZedBoard via USB-UART or Ethernet, or enable Host Simulation Mode below to test.';
+      boardStatusDot.className = 'status-dot simulated';
+      boardStatusText.textContent = 'Simulation Mode (Offline)';
+      boardAlert.className = 'board-alert simulated';
+      alertTitle.textContent = 'FPGA Board Not Detected — Simulation Mode Active';
+      alertDesc.textContent = 'Video compression will run via bit-exact software golden model. Connect ZedBoard Ethernet (192.168.1.50) to use PL hardware acceleration.';
     }
   }
 
   function updateProcessButtonState() {
-    const simAllowed = checkSimMode && checkSimMode.checked;
-    const canRun = currentSessionId && (isBoardConnected || simAllowed);
+    const canRun = !!currentSessionId;
     btnProcess.disabled = !canRun;
     if (!currentSessionId) {
       btnProcess.title = 'Select and upload a video first';
-    } else if (!isBoardConnected && !simAllowed) {
-      btnProcess.title = 'FPGA board not connected. Connect ZedBoard or enable simulation mode.';
+    } else if (!isBoardConnected) {
+      btnProcess.title = 'Ready to compress (Offline Golden Simulation)';
     } else {
-      btnProcess.title = 'Ready to compress';
+      btnProcess.title = 'Ready to compress (Hardware FPGA Accelerated)';
     }
   }
 
   // Periodic board polling every 5s & on-demand re-check
   btnRecheckBoard.addEventListener('click', checkBoardStatus);
-  if (checkSimMode) {
-    checkSimMode.addEventListener('change', () => {
-      checkBoardStatus();
-    });
-  }
   setInterval(checkBoardStatus, 5000);
   checkBoardStatus();
 
@@ -205,16 +190,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const simAllowed = checkSimMode && checkSimMode.checked;
-    if (!isBoardConnected && !simAllowed) {
-      alert('Cannot start compression: FPGA ZedBoard is not detected.\n\nPlease connect the ZedBoard via USB-UART or Ethernet, or enable "Host Simulation Mode" if testing offline.');
+    if (!isBoardConnected) {
+      alert('Cannot start compression: FPGA ZedBoard is not detected.\n\nConnect the programmed board and start its ARM TCP service.');
       return;
     }
 
     btnProcess.disabled = true;
     progressContainer.style.display = 'block';
     barFill.style.width = '10%';
-    textStage.textContent = isBoardConnected ? 'Streaming frames to FPGA via AXI DMA...' : 'Compressing video via host model...';
+    textStage.textContent = 'Streaming frames to FPGA via AXI DMA...';
     textPercent.textContent = '10%';
 
     const progressTimer = setInterval(async () => {
@@ -236,7 +220,6 @@ document.addEventListener('DOMContentLoaded', () => {
           session_id: currentSessionId,
           target_resolution: selectTargetRes.value,
           qp: parseInt(rangeQp.value),
-          allow_simulation: simAllowed
         })
       });
 
@@ -254,9 +237,10 @@ document.addEventListener('DOMContentLoaded', () => {
         placeholderProc.style.display = 'none';
 
         document.getElementById('info-proc-res').textContent = `Output: ${selectTargetRes.value}`;
-        document.getElementById('info-proc-fps').textContent = `Throughput: ${result.fps} FPS`;
+        document.getElementById('info-proc-fps').textContent =
+          `Throughput: ${result.fps ? result.fps + ' FPS' : 'FPGA stream'}`;
 
-        // Only show download button now that hardware/sim compression has completed!
+        // Only show download button after the FPGA stream has been packaged.
         btnDownload.href = result.output_url;
         outputActionBar.style.display = 'block';
       } else {
